@@ -4,13 +4,15 @@ import random
 import requests
 import zoneinfo
 from datetime import datetime, timedelta
-import undetected_chromedriver as uc
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 
 # ==================== CONFIGURAZIONE ====================
 
 PRODUCT_LINKS = [
+
 "https://hoobuy.com/product/2/7556711610?inviteCode=7EjPVDRg",
 "https://hoobuy.com/product/2/7515762163?inviteCode=7EjPVDRg",
 "https://hoobuy.com/product/2/7488275547?inviteCode=7EjPVDRg",
@@ -7666,124 +7668,168 @@ PRODUCT_LINKS = [
 "https://hoobuy.com/product/0/830887378604?inviteCode=7EjPVDRg",
 "https://hoobuy.com/product/0/1040757444401?inviteCode=7EjPVDRg"
 
+    
 ]
 
 API_BASE = "https://api.uufinds.com/open/api/convertUrl?from=21matte&url="
-TIMEZONE = zoneinfo.ZoneInfo("Europe/Rome") # Questo serve solo per stampare i log locali
-LOG_FILE = "stealth_log.txt"
 
+TIMEZONE = zoneinfo.ZoneInfo("Europe/Rome")
+
+# Fasce orarie:
+# - "giorno" 08:00 -> 01:59 (compreso): numero di aperture randomico (20-40), orari randomici nell'ora
+# - "notte"  02:00 -> 07:59: numero di aperture randomico (3-15), orari randomici nell'ora
 ORE_NOTTE = set(range(2, 8))
-ORE_GIORNO = set(range(8, 24)) | {0, 1}
 
-# Vasto assortimento di risoluzioni reali
-VIEWPORT_SIZES = [
-    (1366, 768), (1440, 900), (1536, 864), (1920, 1080),
-    (2560, 1440), (1280, 720), (1600, 900), (1680, 1050)
-]
-
-# Vasto assortimento di User-Agents (Windows e Mac) moderni
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/124.0.0.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 ]
 
-# ==================== FUNZIONI DI LOG ====================
-def scrivi_log(messaggio):
-    print(messaggio)
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(messaggio + "\n")
+VIEWPORT_SIZES = [
+    (1366, 768),
+    (1440, 900),
+    (1536, 864),
+    (1920, 1080),
+]
 
-# ==================== CORE STEALTH ====================
-def get_stealth_driver():
-    options = uc.ChromeOptions()
-    options.add_argument('--headless=new')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    
-    # 1. Randomizzazione Dispositivo
+# ==========================================================
+
+def get_chrome_driver():
+    chrome_options = Options()
+    chrome_options.add_argument('--headless=new')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+
     larghezza, altezza = random.choice(VIEWPORT_SIZES)
-    options.add_argument(f'--window-size={larghezza},{altezza}')
-    options.add_argument(f'--user-agent={random.choice(USER_AGENTS)}')
-    options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_argument(f'--window-size={larghezza},{altezza}')
+    chrome_options.add_argument(f'user-agent={random.choice(USER_AGENTS)}')
 
-    # 2. Impostazione Lingua di Default (Inglese) per evitare pattern tracciabili
-    options.add_argument('--lang=en-US,en;q=0.9')
-
-    driver = uc.Chrome(options=options, use_subprocess=True)
+    driver = webdriver.Chrome(options=chrome_options)
+    driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+        'source': "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    })
     return driver
 
 def pausa_random(minimo, massimo):
     time.sleep(random.uniform(minimo, massimo))
 
-def process_link(product_url):
-    timestamp = datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
-    scrivi_log(f"\n[{timestamp}] =======================================")
+def scroll_umano(driver):
+    try:
+        n_scroll = random.randint(1, 3)
+        for _ in range(n_scroll):
+            offset = random.randint(150, 700)
+            driver.execute_script(f"window.scrollBy(0, {offset});")
+            pausa_random(0.4, 1.3)
+        driver.execute_script("window.scrollTo(0, 0);")
+    except Exception:
+        pass
+
+def muovi_mouse_random(driver):
+    try:
+        body = driver.find_element(By.TAG_NAME, "body")
+        ActionChains(driver).move_to_element_with_offset(
+            body, random.randint(50, 400), random.randint(50, 400)
+        ).perform()
+    except Exception:
+        pass
+
+def process_link(product_url, driver):
+    api_url = f"{API_BASE}{product_url}"
+    timestamp = datetime.now(TIMEZONE).strftime('%H:%M:%S')
+    print(f"\n[{timestamp}] Elaborazione link: {product_url}")
 
     try:
-        api_url = f"{API_BASE}{product_url}"
-        scrivi_log("🔄 Chiamata API...")
-        response = requests.get(api_url, timeout=15)
+        response = requests.get(api_url, timeout=10)
         data = response.json()
+
+        print(" -> Visita API nel browser per verifica...")
+        driver.get(api_url)
+        pausa_random(1.0, 2.5)
+
         redirect_url = data.get("result", {}).get("url")
 
         if data.get("success") and redirect_url:
-            scrivi_log(f"🎯 Target: {redirect_url[:55]}...")
-            scrivi_log("🤖 Avvio Chrome Stealth...")
-            driver = get_stealth_driver()
-            try:
-                driver.get(redirect_url)
-                pausa_random(4.0, 7.0)
-                
-                # Simulazione umana naturale
-                n_scroll = random.randint(1, 4)
-                for _ in range(n_scroll):
-                    offset = random.randint(200, 800)
-                    driver.execute_script(f"window.scrollBy(0, {offset});")
-                    pausa_random(0.5, 2.0)
-                    
-                scrivi_log("👁️ Attività utente (Scroll/Lettura) simulata perfettamente.")
-            finally:
-                driver.quit()
+            print(f" -> Link convertito: {redirect_url}")
+
+            print(" -> Apertura pagina in corso (attesa di 15 secondi per il caricamento completo)...")
+            driver.get(redirect_url)
+            pausa_random(4.0, 6.0)
+
+            scroll_umano(driver)
+            muovi_mouse_random(driver)
+            pausa_random(4.0, 6.0)
+
+            scroll_umano(driver)
+
+            driver.get("about:blank")
+            print(" -> Pagina visitata e chiusa correttamente.")
         else:
-            scrivi_log(f"❌ Errore API: Redirect non fornito.")
+            print(f" -> [AVVISO] Nessun link di redirect trovato. L'API ha risposto: {data}")
 
     except Exception as e:
-        scrivi_log(f"❌ Errore di connessione o timeout: {e}")
+        print(f" -> [ERRORE SCRIPT] Impossibile completare l'operazione: {e}")
 
 # ==================== SCHEDULER ====================
-def genera_offset_randomici(n_aperture, durata_secondi=3600):
-    offsets = sorted(random.sample(range(0, durata_secondi), n_aperture))
-    offsets[0] = random.randint(2, 5) # Partenza rapida per i test
-    return offsets
 
-def esegui_ciclo_orario():
-    inizio = datetime.now(TIMEZONE)
-    n_aperture = random.randint(20, 40) if inizio.hour in ORE_GIORNO else random.randint(3, 15)
+ORE_GIORNO = set(range(8, 24)) | {0, 1}   # 08:00-23:59 + 00:00-01:59 -> modalità GIORNO
+# 02:00-07:59 -> modalità NOTTE
+
+def calcola_aperture_per_ora(ora):
+    if ora in ORE_GIORNO:
+        return random.randint(25, 60), "GIORNO"
+    else:
+        return random.randint(10, 20), "NOTTE"
+
+def genera_offset_randomici(n_aperture, durata_secondi=3600):
+    return sorted(random.sample(range(0, durata_secondi), n_aperture))
+
+def esegui_ciclo_orario(driver):
+    inizio_finestra = datetime.now(TIMEZONE)
+
+    n_aperture, modalita = calcola_aperture_per_ora(inizio_finestra.hour)
     offset_list = genera_offset_randomici(n_aperture)
 
-    scrivi_log(f"\n🚀 AVVIO SIMULAZIONE: {inizio.strftime('%H:%M:%S')} - Utenti previsti: {n_aperture}")
+    print("\n" + "="*60)
+    print(f" 🕐 Avvio finestra dalle {inizio_finestra.strftime('%H:%M:%S')} - Modalità: {modalita} - Aperture previste: {n_aperture}")
+    print("="*60)
 
     for idx, offset in enumerate(offset_list, 1):
-        target_time = inizio + timedelta(seconds=offset)
-        attesa = (target_time - datetime.now(TIMEZONE)).total_seconds()
-        
+        istante_target = inizio_finestra + timedelta(seconds=offset)
+        adesso = datetime.now(TIMEZONE)
+        attesa = (istante_target - adesso).total_seconds()
+
         if attesa > 0:
             time.sleep(attesa)
 
         link = random.choice(PRODUCT_LINKS)
-        scrivi_log(f"\n--- Utente {idx}/{n_aperture} in ingresso ---")
-        process_link(link)
+        print(f"\n--- Apertura {idx}/{n_aperture} pianificata per le {istante_target.strftime('%H:%M:%S')} ---")
+        process_link(link, driver)
+
+        if idx < n_aperture:
+            prossimo_istante = inizio_finestra + timedelta(seconds=offset_list[idx])
+            print(f"\n⏭️  Prossima apertura pianificata per le {prossimo_istante.strftime('%H:%M:%S')}")
+        else:
+            print("\n⏭️  Nessun'altra apertura in questa finestra. Il prossimo ciclo partirà con la prossima esecuzione del workflow.")
 
 def main():
-    scrivi_log("=== INIZIALIZZAZIONE MOTORE STEALTH ===")
-    esegui_ciclo_orario()
-    scrivi_log("\n🏁 SIMULAZIONE COMPLETATA.")
+    if not PRODUCT_LINKS:
+        print("Errore: Inserisci almeno un link nella lista PRODUCT_LINKS!")
+        return
+
+    print("\nInizializzazione del browser Chrome...")
+    driver = get_chrome_driver()
+
+    try:
+        esegui_ciclo_orario(driver)
+    finally:
+        driver.quit()
+        print("\n✅ Ciclo completato.")
 
 if __name__ == "__main__":
     main()
