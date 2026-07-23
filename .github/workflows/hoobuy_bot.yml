@@ -12,7 +12,7 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -34,8 +34,5 @@ jobs:
           pip install undetected-chromedriver selenium requests fake-useragent
 
       - name: Run bot with Virtual Display
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          xvfb-run --auto-servernum python bot.py
+          xvfb-run --auto-servernum python -u bot.py
