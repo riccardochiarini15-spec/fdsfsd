@@ -7786,7 +7786,7 @@ def calcola_aperture_per_ora(ora):
     else:
         return random.randint(10, 20), "NOTTE"
 
-def genera_offset_randomici(n_aperture, durata_secondi=3600):
+def genera_offset_randomici(n_aperture, durata_secondi=3300):
     return sorted(random.sample(range(0, durata_secondi), n_aperture))
 
 def esegui_ciclo_orario(driver):
