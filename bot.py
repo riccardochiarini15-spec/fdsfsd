@@ -6,8 +6,10 @@ import zoneinfo
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
 
 # ==================== CONFIGURAZIONE ====================
 
@@ -7710,7 +7712,8 @@ def get_chrome_driver():
     chrome_options.add_argument(f'--window-size={larghezza},{altezza}')
     chrome_options.add_argument(f'user-agent={random.choice(USER_AGENTS)}')
 
-    driver = webdriver.Chrome(options=chrome_options)
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
     driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
         'source': "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
     })
